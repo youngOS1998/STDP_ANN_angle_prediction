@@ -1,6 +1,6 @@
 import numpy as np
 from Visual_odometry._globals import *
-# from Visual_odometry.visual_odometry import VisualOdometry
+from Visual_odometry.visual_odometry import VisualOdometry
 
 
 class visual_odometry(object):
@@ -14,12 +14,11 @@ class visual_odometry(object):
     def __init__(self):
         '''Initializes the ratslam modules.'''
 
-        # self.visual_odometry = VisualOdometry()
+        self.visual_odometry = VisualOdometry()
 
-        # # TRACKING -------------------------------
-        # x, y, th = self.visual_odometry.odometry       # x： x轴方向上的线速度分量， y: y轴方向上的线速度分量， th: 角度
-        # self.odometry = [[x], [y], [th]]
-        pass
+        # TRACKING -------------------------------
+        x, y, th = self.visual_odometry.odometry       # x： x轴方向上的线速度分量， y: y轴方向上的线速度分量， th: 角度
+        self.odometry = [[x], [y], [th]]
         
         # ----------------------------------------
 
