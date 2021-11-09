@@ -1,7 +1,10 @@
+from torch.nn.modules.activation import Sigmoid
 import _globals
 import csv
 from brian2 import *
 import brian2 as b2
+import torch.nn as nn
+import torch
 # from Visual_odometry.Spiking_model import *
 
 
@@ -27,7 +30,7 @@ delay = {}
 input_population_names = ['X']
 population_names = ['A']
 input_connection_names = ['XA']
-save_conns = ['XeAe']
+save_conns = ['XeAe', 'AeAi', 'AiAe']       # 存下三种突触连接
 input_conn_names = ['ee_input']
 recurrent_conn_names = ['ei', 'ie']
 weight['ee_input'] = 78.
@@ -47,8 +50,20 @@ exp_ee_post = exp_ee_pre
 STDP_offset = 0.4
 ee_STDP_on = True
 
+num_examples = 3000 * 3
+single_example_time = 0.35 * b2.second
+resting_time = 0.15 * b2.second
+
+
+def create_Weight_Matrix(weight_M, dim_0, dim_1):
+
+    Weight_Matrix = np.zeros((dim_0, dim_1))
+    Weight_Matrix[weight_M[:,0], weight_M[:,1]] = weight_M[:,3]
+    return Weight_Matrix
+
 #----------------------------------------
 weight_path = 'D:/python_pro/pro_slam_odometry_git'
+weight_save_path = 'D:/python_pro/pro_slam_odometry_git/'
 #----------------------------------------
 
 neuron_weights = np.zeros((n_e, 10))    # 表示400个神经元，每个神经元对每个类的敏感程度
@@ -114,6 +129,24 @@ ending = ''
 
 #         for row in f_csv:
 #             print(row[1])
+
+device = 'cpu'
+
+class MyModel(nn.Module):
+    def __init__(self):
+        super(MyModel, self).__init__()
+        self.net = nn.Sequential(
+            nn.Linear(400, 512),
+            nn.Sigmoid(),
+            nn.Linear(512, 400),
+            nn.Sigmoid(),
+            nn.Linear(400, 100),
+            nn.Sigmoid(),
+            nn.Linear(100, 1)
+        )
+    
+    def forward(self, x):
+        return self.net(x)
 
 
 

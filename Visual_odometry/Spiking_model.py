@@ -13,7 +13,33 @@ from _globals import *
 from pre_params import *
 import os
 from scipy import interpolate
+import pickle
+import torch
 
+
+class Spiking_model():
+    def __init__(self) -> None:
+        pass
+
+    def get_matrix_from_file(self, fileName, ending=''):
+        offset = len(ending) + 4
+        if fileName[-4-offset] == 'X':
+            n_src = n_input
+        else:
+            if fileName[-3-offset]=='e':
+                n_src = n_e
+            else:
+                n_src = n_i
+        if fileName[-1-offset]=='e':
+            n_tgt = n_e
+        else:
+            n_tgt = n_i
+        readout = np.load(fileName)
+        print ('readout shape is:', readout.shape, fileName)
+        value_arr = np.zeros((n_src, n_tgt))
+        if not readout.shape == (0,):
+            value_arr[np.int32(readout[:,0]), np.int32(readout[:,1])] = readout[:,2]
+        return value_arr
 
 #--------------------------------------------------
 # 以下是一些 pre methods
@@ -56,11 +82,52 @@ def plot_2d_input_weights():
     name = 'XeAe'
     weights = get_2d_input_weights()
     fig = b2.figure(fig_num, figsize = (18, 18))    # fig_num = 1
-    im2 = b2.imshow(weights, interpolation = "nearest", vmin = 0, vmax = wmax_ee, cmap = cmap.get_cmap('hot_r'))
+    im2 = b2.imshow(weights, interpolation = "nearest", vmin = 0, vmax = wmax_ee, cmap = cmap.get_cmap('hot'))
     b2.colorbar(im2)
     b2.title('weights of connection' + name)
     b2.show()
     return im2, fig
+
+def get_angle_data(picklename, bTrain = True):    
+    """Read input-vector (image) and target class (label, 0-9) and return
+       it as list of tuples.
+    """
+    data_path = 'D:/python_pro/pro_slam_odometry_git/'
+    file_path = os.path.join(data_path, picklename)
+    if os.path.isfile('%s' % file_path):
+        data = pickle.load(open('%s' % file_path, 'rb'))
+    else:
+        data = False
+    return data
+
+def save_connections(ending = 'save'):
+    print ('save connections')
+    for connName in save_conns:       # save_conns = ['XeAe']
+        conn = connections[connName]  # connections = {} 中有三个，一个是'AeAi'的突触连接, 一个是'AiAe'的突触连接，后面还会增加一个'XeAe'的突触连接
+        i_1 = np.array(conn.i)        # shape = (112000, )
+        i_1 = i_1[:, np.newaxis]      # shape = (112000,1)
+        # print(type(i_1))
+        # print(i_1.shape)
+        j_1 = np.array(conn.j)
+        j_1 = j_1[:, np.newaxis]
+        w_1 = np.array(conn.w)
+        w_1 = w_1[:, np.newaxis]
+        connListSparse = np.concatenate((i_1, j_1, w_1), axis = 1)
+        np.save(weight_save_path + 'weights/' + connName + ending, connListSparse)
+
+# def normalize_weights():
+#     for connName in connections:                            # connections = {'AeAi', 'AiAe'}
+#         len_source = len(connections[connName].source)  # 突触前神经元个数
+#         len_target = len(connections[connName].target)  # 突触后神经元个数
+#         connection = np.zeros((len_source, len_target)) # (400, 400)
+#         connection[connections[connName].i, connections[connName].j] = connections[connName].w  # 将权重矩阵存入到connection这个矩阵中
+#         temp_conn = np.copy(connection)                 # temp_conn是对connection这个权重矩阵的复制
+#         colSums = np.sum(temp_conn, axis = 0)           # 即： 将400*400的矩阵，每列进行求和运算。 现在shape是(400, )
+#         colFactors = weight['ee_input']/colSums         # weight['ee_input'] = 78.     
+#         for j in range(n_e):                            # n_e = 400
+#             temp_conn[:,j] *= colFactors[j]             # 现在是对每列进行权重归一化
+#         connections[connName].w = temp_conn[connections[connName].i, connections[connName].j]   # 将归一化后的权重又重新赋值给connections
+
 
 
 #---------------------------------------------
@@ -148,7 +215,8 @@ for subgroup_n, name in enumerate(population_names): # population_names = ['A']
 
     print ('create monitors for', name)
     rate_monitors[name+'e'] = b2.PopulationRateMonitor(neuron_groups[name+'e'])   # Ae这个神经元组的PopulationRateMonitor()
-    rate_monitors[name+'i'] = b2.PopulationRateMonitor(neuron_groups[name+'i'])   # Ai这个神经元组的PopulationRateMonitor()
+    rate_monitors[name+'i'] = b2.PopulationRateMonitor(neuron_groups[name+'i']) 
+    spike_counters[name+'e'] = b2.SpikeMonitor(neuron_groups[name+'e'])  # Ai这个神经元组的PopulationRateMonitor()
 
     if record_spikes:  # True
         spike_monitors[name+'e'] = b2.SpikeMonitor(neuron_groups[name+'e'])       # Ae这个神经元组的脉冲记录
@@ -196,11 +264,11 @@ for name in input_connection_names:                                             
 # run the simulation and set inputs
 #------------------------------------------------------------------------------
 
-# net = Network()
-# for obj_list in [neuron_groups, input_groups, connections, rate_monitors,
-#         spike_monitors, spike_counters]:
-#     for key in obj_list:
-#         net.add(obj_list[key])
+net = Network()
+for obj_list in [neuron_groups, input_groups, connections, rate_monitors,
+        spike_monitors, spike_counters]:
+    for key in obj_list:
+        net.add(obj_list[key])
 
 # previous_spike_count = np.zeros(n_e)          # n_e = 400
 # assignments = np.zeros(n_e)
@@ -210,49 +278,57 @@ for name in input_connection_names:                                             
 # fig_num += 1
 # if do_plot_performance:  # when training, do_plot_performance = True
 #     performance_monitor, performance, fig_num, fig_performance = plot_performance(fig_num)   # return im2, performance, fig_num, fig
-# for i,name in enumerate(input_population_names):   # input_population_names = ['X']
-#     input_groups[name+'e'].rates = 0 * Hz          # input_groups['Xe'].rates = 0 * Hz
-# net.run(0*second)
-# j = 0
+for i,name in enumerate(input_population_names):   # input_population_names = ['X']
+    input_groups[name+'e'].rates = 0 * Hz          # input_groups['Xe'].rates = 0 * Hz
+net.run(2*second)
 
-def plot_contour(Coordx,Coordy,Strain,figName,minX=0,maxX=500,minY=0,maxY=500):
+# plot_2d_input_weights()
+# pause(1000)
 
-    X = np.linspace(minX, maxX, 1000)
-    Y = np.linspace(minY, maxY, 1000)
-    #生成二维数据坐标点，可以想象成围棋棋盘上的一个个落子点
-    X1, Y1 = np.meshgrid(X, Y)
-    #通过griddata函数插值得到所有的(X1, Y1)处对应的值，原始数据为Coordx, Coordy, Strain
-    Z = interpolate.griddata((Coordx, Coordy), Strain, (X1, Y1), method='cubic')
-  
-    fig, ax = plt.subplots(figName, figsize=(12, 8))
 
-    #level设置云图颜色范围以及颜色梯度划分，只能显示0-601范围数值，每间隔20颜色变化
-    levels = range(0,601,20) 
-    cset1 = ax.contourf(X1, Y1, Z, levels,cmap=cm.jet) 
-    #设置cmap为jet，最小值为蓝色，最大为红色，和有限元软件云图配色类似
-   
-    #设置图片在屏幕中出现的位置
-    mngr = plt.get_current_fig_manager()
-    mngr.window.wm_geometry("+350+50")
+#----------------------------------------------
+# start to training the network (unsupervised learning)
+#----------------------------------------------
 
-    ax.set_title( figName,size=20)  #设置图名
-    #设置云图坐标范围以及坐标轴标签
-    ax.set_xlim(minX, maxX)
-    ax.set_ylim(minY, maxY)
-    ax.set_xlabel("X(mm)",size=15)
-    ax.set_ylabel("Y(mm)",size=15)
+previous_spike_count = np.zeros(n_e)          # n_e = 400
 
-    #设置colorbar的刻度，标签
-    cbar = fig.colorbar(cset1)
-    cbar.set_label('strain(με)', size=18)
-    cbar.set_ticks([0,100,200,300,400,500,600])
-   
-   
-    #保存图片，bbox_inches设置图片周边空白的大小
-    #fig.savefig(figName+".png", bbox_inches='tight',dpi=150,pad_inches=0.1)
-    plt.show()  #是否显示图片
- 
-    return()
+training = get_angle_data('data_template.pickle')   # (3000, 280) : 3000表示3000个样本， 280表示每个样本有280个维度的数据
+                                                    # data = {'template': data_template, 'angle': data_label}
+data_len = len(training['template'])
+real_angle = np.zeros(data_len)
+
+j = 0
+while j < (int(100)):    # num_examples = 3000 * 3   
+# while j < 10:
+    print('\n at example %d', j)
+    # normalize_weights()
+    spike_rates = training['template'][j,:].reshape((n_input)) / 100. *  input_intensity
+    input_groups['Xe'].rates = spike_rates * Hz
+#     print 'run number:', j+1, 'of', int(num_examples)
+    net.run(single_example_time, report='text')                          # single_example_time =   0.35 * b2.second
+
+    current_spike_count = np.asarray(spike_counters['Ae'].count[:]) - previous_spike_count  
+    print(current_spike_count.shape)
+    previous_spike_count = np.copy(spike_counters['Ae'].count[:])        # 'Ae'中400个神经元每个的发射脉冲个数， shape是 （400， ), 此值是个累积的值，所以我们每输入一个样本数据，我们就要求其差值
+    if np.sum(current_spike_count) < 5:    
+        print('warning: in a loop!')                              # 如果所有的神经元发射脉冲总数 < 5
+        input_intensity += 1                                             # 将所有图像点的光强转换为rate后的值+1
+        for i,name in enumerate(input_population_names):                 # input_population_names = ['X']
+            input_groups[name+'e'].rates = 0 * Hz                        # input_groups['Xe'].rates = 0 * Hz
+        net.run(resting_time)                                            # resting_time = 0.15 s
+    else:
+        result_monitor[j] = current_spike_count                          # start_input_intensity = input_intensity
+        real_angle[j] = training['angle'][j]
+        j += 1
+
+# save weights in synapses: 'XeAe', 'AeAi', 'AiAe'
+save_connections()   
+
+plot_2d_input_weights()
+pause(1000)
+
+
+
 
 
 
